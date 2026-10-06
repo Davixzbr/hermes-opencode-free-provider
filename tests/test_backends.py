@@ -57,7 +57,8 @@ class TestBackendSelection(unittest.TestCase):
 
     def test_select_unknown_model_uses_configured(self):
         cfg = PluginConfig.from_dict({"backend_keys": {"groq": "gsk-test"}})
-        selected = select_backends("opencode-free/brand-new", {"other": []}, cfg)
+        with patch("config.hermes_provider_keys", return_value={}):
+            selected = select_backends("opencode-free/brand-new", {"other": []}, cfg)
         self.assertEqual([a.name for a in selected], ["groq"])
 
     def test_no_silent_model_substitution(self):
@@ -78,14 +79,18 @@ class TestBackendAuth(unittest.TestCase):
             self.assertEqual(PollinationsAdapter().api_key(cfg), "sk-env-123")
 
     def test_no_hardcoded_keys(self):
-        import pathlib
+        import re
+
         root = PLUGIN_DIR
+        # Secret-shaped values only: a bare prefix used for key *routing*
+        # (e.g. startswith("gsk_")) is not a leaked credential.
+        pattern = re.compile(r"(sk-ant-[A-Za-z0-9]{8,}|sk-or-v1-[A-Za-z0-9]{8,}"
+                             r"|gsk_[A-Za-z0-9]{8,}|sk-poll-[A-Za-z0-9]{8,})")
         suspicious = []
         for path in list(root.glob("*.py")) + list((root / "backends").glob("*.py")):
             text = path.read_text(encoding="utf-8")
-            for marker in ("sk-ant-", "sk-or-v1-", "gsk_", "sk-poll-"):
-                if marker in text:
-                    suspicious.append((path.name, marker))
+            if pattern.search(text):
+                suspicious.append(path.name)
         self.assertEqual(suspicious, [])
 
     def test_zen_anonymous_rejected(self):

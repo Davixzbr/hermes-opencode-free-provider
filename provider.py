@@ -1,7 +1,6 @@
 """Hermes ProviderProfile for opencode-free (free backends)."""
 from __future__ import annotations
 
-import sys
 from typing import Any
 
 from config import PluginConfig
@@ -25,6 +24,7 @@ def _load_profile_base():  # type: ignore[no-untyped-def]
             description: str = ""
             env_vars: tuple = ()
             base_url: str = ""
+            signup_url: str = ""
             models_url: str = ""
             auth_type: str = "external_process"
             process_command: str = ""
@@ -107,11 +107,14 @@ def build_profile(config: PluginConfig | None = None) -> Any:
         description=("Free backends for Hermes agents (Pollinations primary, "
                      "OpenRouter/Groq fallback) with Hermes-local tools"),
         api_mode="chat_completions",
-        auth_type="external_process",
+        # api_key (NOT external_process): Hermes then mirrors this profile into
+        # PROVIDER_REGISTRY, resolves the credential from env/.env/`hermes auth add`,
+        # and passes it to create_client(api_key=...). external_process made Hermes
+        # treat every 401 as a missing OAuth sign-in and refuse `hermes auth add`.
+        auth_type="api_key",
         env_vars=("POLLINATIONS_API_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY"),
         base_url=LOGICAL_BASE_URL,
-        process_command=sys.executable,
-        process_command_env_vars=(),
+        signup_url="https://enter.pollinations.ai/keys",
         fallback_models=tuple(FALLBACK_MODELS),
         default_aux_model=DEFAULT_MODEL,
         model_capabilities={m: {"supports_tools": True} for m in FALLBACK_MODELS},

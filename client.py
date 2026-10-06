@@ -197,9 +197,12 @@ class OpenCodeClient:
             config = PluginConfig.from_dict(config)
         self.config = config or PluginConfig.from_env()
         if api_key and api_key not in {"opencode-public", "public"}:
-            # Back-compat: a bare key maps to the primary backend.
-            if not self.config.pollinations_api_key:
-                self.config.pollinations_api_key = api_key
+            # Back-compat: a bare key maps to the backend that owns its shape.
+            from config import backend_for_key
+
+            target = backend_for_key(api_key) or "pollinations"
+            if not getattr(self.config, f"{target}_api_key", None):
+                setattr(self.config, f"{target}_api_key", api_key)
         self.base_url = base_url or LOGICAL_BASE_URL
         self.debug = DebugLogger(enabled=self.config.debug)
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))

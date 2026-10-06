@@ -139,7 +139,8 @@ class PluginConfig:
         )
 
     def key_for(self, backend: str) -> str | None:
-        """Resolve a backend key: explicit field, backend_keys map, then env."""
+        """Resolve a backend key: explicit field, backend_keys map, env, then
+        the Hermes `providers.<name>.api_key` block in config.yaml."""
         import os as _os
 
         for candidate in (getattr(self, f"{backend}_api_key", None),
@@ -154,4 +155,90 @@ class PluginConfig:
             value = _os.environ.get(var)
             if value and value.strip():
                 return value.strip()
+        hermes = hermes_provider_keys()
+        direct = hermes.get(backend)
+        if direct:
+            return direct
+        # `providers.opencode-free.api_key` holds whatever key the user added for
+        # this provider: route it by key shape so an OpenRouter key never hits Pollinations.
+        generic = hermes.get("opencode-free")
+        if generic and backend_for_key(generic) == backend:
+            return generic
         return None
+
+
+# -- Hermes config.yaml credential bridge ------------------------------------
+# The user already keeps keys in `$HERMES_HOME/config.yaml` under `providers:`
+# (e.g. `providers.openrouter.api_key`). Reading them here means the plugin's
+# fallback backends work with the credentials Hermes already manages, without
+# asking for the same key twice. Secrets are never logged.
+_KEY_ALIASES = {
+    "pollinations": ("pollinations",),
+    "openrouter": ("openrouter",),
+    "groq": ("groq",),
+    "zen": ("opencode", "opencode-zen", "zen"),
+    # Our own provider entry: routed by key shape in key_for().
+    "opencode-free": ("opencode-free", "oc-free"),
+}
+_HERMES_KEYS_CACHE: dict[str, str] | None = None
+
+
+def hermes_provider_keys() -> dict[str, str]:
+    """backend -> key from `$HERMES_HOME/config.yaml` `providers.<id>.api_key`.
+
+    Minimal indentation-aware parse (stdlib only, no YAML dependency).
+    Returns {} when the file is absent/unreadable. Cached per process.
+    """
+    global _HERMES_KEYS_CACHE
+    if _HERMES_KEYS_CACHE is not None:
+        return _HERMES_KEYS_CACHE
+    out: dict[str, str] = {}
+    try:
+        import pathlib
+
+        try:
+            from hermes_constants import get_hermes_home  # type: ignore[import-not-found]
+
+            path = pathlib.Path(get_hermes_home()) / "config.yaml"
+        except Exception:
+            base = os.environ.get("HERMES_HOME") or str(pathlib.Path.home() / ".hermes")
+            path = pathlib.Path(base) / "config.yaml"
+        in_providers = False
+        current: str | None = None
+        for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = raw_line.rstrip()
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            indent = len(line) - len(line.lstrip())
+            text = line.strip()
+            if indent == 0:
+                in_providers = text.startswith("providers:")
+                current = None
+                continue
+            if not in_providers:
+                continue
+            if indent <= 2:
+                current = text.rstrip(":").strip().strip('"').strip("'") if text.endswith(":") else None
+                continue
+            if current and text.startswith(("api_key:", "api-key:")):
+                value = text.split(":", 1)[1].strip().strip('"').strip("'")
+                if value and value not in {"*", "null", "none"}:
+                    for backend, names in _KEY_ALIASES.items():
+                        if current.lower() in names:
+                            out.setdefault(backend, value)
+    except Exception:
+        return {}
+    _HERMES_KEYS_CACHE = out
+    return out
+
+
+def backend_for_key(key: str) -> str | None:
+    """Route a bare credential to the backend that owns its key shape."""
+    raw = (key or "").strip()
+    if not raw:
+        return None
+    if raw.startswith("sk-or-"):
+        return "openrouter"
+    if raw.startswith("gsk_"):
+        return "groq"
+    return "pollinations"

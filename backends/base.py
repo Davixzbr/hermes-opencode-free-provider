@@ -77,9 +77,19 @@ class BackendAdapter(ABC):
 
     # -- auth ---------------------------------------------------------
     def api_key(self, config: Any = None) -> str | None:
-        """Resolve key from explicit config, then env. Never hardcoded."""
+        """Resolve key from explicit config, then env, then Hermes config.yaml.
+
+        Never hardcoded. Delegates to PluginConfig.key_for() when available so
+        every layer shares one resolution order.
+        """
         import os
 
+        key_for = getattr(config, "key_for", None)
+        if callable(key_for):
+            try:
+                return key_for(self.name)
+            except Exception:
+                pass
         if config is not None:
             for attr in ("api_key", f"{self.name}_api_key", "apiKey"):
                 value = getattr(config, attr, None)
