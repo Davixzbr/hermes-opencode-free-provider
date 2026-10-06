@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Hermes runtime cache (per-user, never commit)
+# NOTE: $HERMES_HOME cache lives outside the repo; nothing to exclude here.
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# Test / coverage artifacts
+.coverage
+htmlcov/
+.pytest_cache/
